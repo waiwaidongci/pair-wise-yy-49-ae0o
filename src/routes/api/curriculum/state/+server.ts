@@ -3,5 +3,5 @@ import { getState } from '$lib/server/revisionStore'
 
 export async function GET() {
   const state = await getState()
-  return json({ ...state, updatedAt: new Date().toISOString() })
+  return json(state)
 }

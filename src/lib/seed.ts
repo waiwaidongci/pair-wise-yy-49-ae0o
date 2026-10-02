@@ -13,6 +13,8 @@ export type Mapping = {
   target: string
   relation: '支撑' | '前置' | '考核' | '教学'
   weight: number
+  origin?: string
+  conflictOf?: string
 }
 
 export type ReviewItem = {
@@ -23,6 +25,8 @@ export type ReviewItem = {
   submitter: string
   status: '待审阅' | '已附议' | '已退回'
   comment: string
+  origin?: string
+  conflictOf?: string
 }
 
 export const nodes: GraphNode[] = [

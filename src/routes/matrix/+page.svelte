@@ -10,9 +10,12 @@
   let relation = $state<Mapping['relation']>('支撑')
   let weight = $state(1)
   let query = $state('')
+  let notice = $state<{ type: 'success' | 'error'; text: string } | null>(null)
   const issues = $derived(validateCurriculum($curriculumStore))
   const visibleIds = $derived(new Set($curriculumStore.nodes.filter((node) => !query || node.label.includes(query) || node.id.includes(query)).map((node) => node.id)))
   const selected = $derived($curriculumStore.nodes.find((item) => item.id === selectedNode))
+  const pendingOpsCount = $derived($curriculumStore.pendingOps.length)
+  const conflicts = $derived($curriculumStore.conflicts)
 
   function startDrag(event: MouseEvent, id: string) {
     const node = $curriculumStore.nodes.find((item) => item.id === id)
@@ -36,12 +39,31 @@
     curriculumStore.addMapping(source, target, relation, weight)
   }
 
+  async function submitChanges() {
+    if (pendingOpsCount === 0) {
+      notice = { type: 'error', text: '没有待提交的修改。' }
+      return
+    }
+    const result = await curriculumStore.submitRevision('课程负责人', '映射图谱调整')
+    if (result.ok) {
+      notice = { type: 'success', text: `修订已提交（R${result.head}），${result.conflicts.length} 项冲突已保留双方。` }
+    } else {
+      notice = { type: 'error', text: '提交失败，修改已保留在本地，重开后自动恢复。' }
+    }
+  }
+
+  async function publish() {
+    const result = await curriculumStore.publish()
+    if (result.ok) notice = { type: 'success', text: '已发布锁版：只纳入已采用的修改，退回项留在队列。' }
+    else notice = { type: 'error', text: '发布失败。' }
+  }
+
   function exportMap() {
     const blob = new Blob([JSON.stringify($curriculumStore, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `课程地图-${$curriculumStore.revision}.json`
+    link.download = `课程地图-R${$curriculumStore.head}.json`
     link.click()
     URL.revokeObjectURL(url)
   }
@@ -52,8 +74,27 @@
 <section class="page">
   <div class="page-head">
     <div><p class="eyebrow">CURRICULUM MAP / 映射图谱</p><h1>有向关系与覆盖矩阵</h1><p class="muted">拖动节点重新布局；连边关系持久保存，覆盖缺口会立即高亮。</p></div>
-    <div class="actions"><button class="btn-secondary" onclick={exportMap}>导出课程地图</button><button class="btn-primary" onclick={() => $curriculumStore.lock(`R${Number($curriculumStore.revision.slice(1)) + 1}`)}>锁定当前版本</button></div>
+    <div class="actions">
+      <span class="rev-badge">所见 R{$curriculumStore.base}</span>
+      <span class="rev-badge {pendingOpsCount ? 'pending' : 'muted'}">待提交 {pendingOpsCount}</span>
+      <button class="btn-secondary" onclick={exportMap}>导出课程地图</button>
+      <button class="btn-secondary" onclick={submitChanges} disabled={pendingOpsCount === 0}>提交修订</button>
+      <button class="btn-primary" onclick={publish}>{$curriculumStore.locked ? '重新锁版' : '锁定当前版本'}</button>
+    </div>
   </div>
+
+  {#if notice}
+    <div class="notice {notice.type}">{notice.text}</div>
+  {/if}
+
+  {#if conflicts.length > 0}
+    <div class="conflict-bar">
+      <strong>冲突已保留双方：</strong>
+      {#each conflicts as c}
+        <span class="conflict-chip">{c.targetLabel}（{c.incomingOrigin} ↔ {c.existingOrigin}）</span>
+      {/each}
+    </div>
+  {/if}
 
   <div class="matrix-toolbar panel">
     <input bind:value={query} placeholder="搜索目标、课程或单元" />
@@ -77,7 +118,7 @@
           {@const to = $curriculumStore.nodes.find((node) => node.id === mapping.target)}
           {#if from && to && visibleIds.has(from.id) && visibleIds.has(to.id)}
             <line x1={from.x + 80} y1={from.y + 28} x2={to.x} y2={to.y + 28} class:relation={true} marker-end="url(#arrow)" />
-            <text x={(from.x + to.x) / 2 + 80} y={(from.y + to.y) / 2 + 22} class="edge-label">{mapping.relation}</text>
+            <text x={(from.x + to.x) / 2 + 80} y={(from.y + to.y) / 2 + 22} class="edge-label">{mapping.relation}{#if mapping.origin} · {mapping.origin}{/if}</text>
           {/if}
         {/each}
         {#each $curriculumStore.nodes as node}
@@ -124,7 +165,14 @@
 </section>
 
 <style>
-  .actions { display: flex; gap: 8px; }
+  .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .rev-badge { padding: 5px 10px; border-radius: 6px; color: #2f6f72; background: #e7f2f1; font-size: 12px; font-weight: 700; }
+  .rev-badge.pending { color: #9b5a25; background: #fff0de; }
+  .rev-badge.muted { color: #748289; background: #eef1f1; font-weight: 500; }
+  .notice { margin-bottom: 12px; padding: 12px 14px; border-left: 3px solid #3f8869; color: #27634d; background: #ebf6f0; }
+  .notice.error { border-color: #bd4d35; color: #913c2b; background: #fff1ec; }
+  .conflict-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; padding: 10px 14px; border-left: 3px solid #cd813a; background: #fff6e9; font-size: 12px; }
+  .conflict-chip { padding: 3px 8px; border-radius: 5px; color: #9b5a25; background: #ffe6cc; font-size: 11px; }
   .matrix-toolbar { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 12px; padding: 12px; }
   .matrix-toolbar > input:first-child { max-width: 220px; }
   .matrix-toolbar select { max-width: 230px; }
