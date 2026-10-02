@@ -1,5 +1,6 @@
 <script lang="ts">
   import { curriculumStore, validateCurriculum } from '$lib/stores'
+  import RevisionCenter from '$lib/RevisionCenter.svelte'
   import type { Mapping } from '$lib/seed'
 
   let dragging = $state<string | null>(null)
@@ -10,6 +11,7 @@
   let relation = $state<Mapping['relation']>('支撑')
   let weight = $state(1)
   let query = $state('')
+  let lockNote = $state('')
   const issues = $derived(validateCurriculum($curriculumStore))
   const visibleIds = $derived(new Set($curriculumStore.nodes.filter((node) => !query || node.label.includes(query) || node.id.includes(query)).map((node) => node.id)))
   const selected = $derived($curriculumStore.nodes.find((item) => item.id === selectedNode))
@@ -36,12 +38,25 @@
     curriculumStore.addMapping(source, target, relation, weight)
   }
 
+  function publishLocked() {
+    curriculumStore.publish(lockNote.trim() || `R${$curriculumStore.headRev + 1} 锁版发布：纳入已采用修改`)
+    lockNote = ''
+  }
+
   function exportMap() {
-    const blob = new Blob([JSON.stringify($curriculumStore, null, 2)], { type: 'application/json' })
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      viewRev: $curriculumStore.rev,
+      locked: $curriculumStore.isLockedView,
+      nodes: $curriculumStore.nodes,
+      mappings: $curriculumStore.mappings,
+      reviewItems: $curriculumStore.reviewItems,
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `课程地图-${$curriculumStore.revision}.json`
+    link.download = `课程地图-R${$curriculumStore.rev}${$curriculumStore.isLockedView ? '-锁版' : ''}.json`
     link.click()
     URL.revokeObjectURL(url)
   }
@@ -51,8 +66,12 @@
 
 <section class="page">
   <div class="page-head">
-    <div><p class="eyebrow">CURRICULUM MAP / 映射图谱</p><h1>有向关系与覆盖矩阵</h1><p class="muted">拖动节点重新布局；连边关系持久保存，覆盖缺口会立即高亮。</p></div>
-    <div class="actions"><button class="btn-secondary" onclick={exportMap}>导出课程地图</button><button class="btn-primary" onclick={() => $curriculumStore.lock(`R${Number($curriculumStore.revision.slice(1)) + 1}`)}>锁定当前版本</button></div>
+    <div><p class="eyebrow">CURRICULUM MAP / 映射图谱</p><h1>有向关系与覆盖矩阵</h1><p class="muted">拖动节点重新布局；连边按所见修订号提交，未冲突改动直接合用，同项双改保留两份。</p></div>
+    <div class="actions">
+      <button class="btn-secondary" onclick={exportMap}>导出 R{$curriculumStore.rev}{$curriculumStore.isLockedView ? ' 锁版' : ''}</button>
+      <input class="lock-note" bind:value={lockNote} placeholder="锁版版本说明（可空）" disabled={$curriculumStore.readonly} />
+      <button class="btn-primary" onclick={publishLocked} disabled={$curriculumStore.readonly}>发布锁版 R{$curriculumStore.headRev + 1}</button>
+    </div>
   </div>
 
   <div class="matrix-toolbar panel">
@@ -62,7 +81,7 @@
     <select bind:value={target}>{#each $curriculumStore.nodes as node}<option value={node.id}>{node.id} · {node.label.split('\n')[0]}</option>{/each}</select>
     <select bind:value={relation}><option>支撑</option><option>前置</option><option>教学</option><option>考核</option></select>
     <input bind:value={weight} type="number" min="0" max="1" step="0.1" />
-    <button class="btn-primary" onclick={addMapping}>新增连边</button>
+    <button class="btn-primary" onclick={addMapping} disabled={$curriculumStore.readonly}>新增连边</button>
     <span class="muted">{issues.length} 项校验提示</span>
   </div>
 
@@ -116,15 +135,18 @@
       <div class="legend"><span><i class="covered-dot"></i>已有映射</span><span><i class="gap-dot"></i>覆盖缺口</span></div>
       <div class="node-detail">
         {#if selected}
-          <strong>{selected.label.split('\n')[0]}</strong><p>{selected.id} · {selected.type}</p><button class="btn-secondary">编辑节点信息</button>
+          <strong>{selected.label.split('\n')[0]}</strong><p>{selected.id} · {selected.type}</p><a class="btn-secondary" href="/courses">编辑节点信息</a>
         {/if}
       </div>
     </aside>
   </div>
+
+  <RevisionCenter expanded={false} />
 </section>
 
 <style>
-  .actions { display: flex; gap: 8px; }
+  .actions { display: flex; gap: 8px; align-items: center; }
+  .actions .lock-note { width: 220px; }
   .matrix-toolbar { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 12px; padding: 12px; }
   .matrix-toolbar > input:first-child { max-width: 220px; }
   .matrix-toolbar select { max-width: 230px; }

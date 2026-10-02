@@ -2,6 +2,7 @@
   import { page } from '$app/state'
   import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query'
   import { curriculumStore } from '$lib/stores'
+  import type { Role } from '$lib/revision'
   import '../app.css'
   const queryClient = new QueryClient({
     defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
@@ -14,6 +15,8 @@
     { href: '/matrix', label: '映射图谱', icon: '图' },
     { href: '/review', label: '改革审阅', icon: '审' },
   ]
+  const roles: Role[] = ['课程负责人', '院系审阅人']
+  const conflictCount = $derived($curriculumStore.conflicts.filter((conflict) => !conflict.resolved).length)
 </script>
 
 <svelte:head><title>{page.data?.title ?? '课程改革审阅平台'}</title></svelte:head>
@@ -27,10 +30,43 @@
           <a href={item.href} class:active={page.url.pathname === item.href} onclick={() => mobileOpen = false}><span>{item.icon}</span>{item.label}</a>
         {/each}
       </nav>
-      <div class="side-note"><strong>{$curriculumStore.locked ? '版本已锁定' : '草稿自动保存'}</strong><span>当前版本 {$curriculumStore.revision}</span></div>
+      <div class="actor-box">
+        <label>当前操作人
+          <input value={$curriculumStore.actor.name} onchange={(event) => curriculumStore.setActor(event.currentTarget.value || $curriculumStore.actor.name, $curriculumStore.actor.role)} />
+        </label>
+        <label>角色
+          <select value={$curriculumStore.actor.role} onchange={(event) => curriculumStore.setActor($curriculumStore.actor.name, event.currentTarget.value as Role)}>
+            {#each roles as role}<option value={role}>{role}</option>{/each}
+          </select>
+        </label>
+      </div>
+      <div class="side-note">
+        <strong>{$curriculumStore.isLockedView ? '锁版快照（只读）' : $curriculumStore.readonly ? '历史版本（只读）' : $curriculumStore.lastReleaseRev ? '已发布锁版 · 继续修订' : '草稿自动保存'}</strong>
+        <span>{$curriculumStore.readonly ? `查看 R${$curriculumStore.rev} / 工作版 R${$curriculumStore.headRev}` : `当前工作版 R${$curriculumStore.rev}`}{#if conflictCount > 0} · {conflictCount} 项冲突{/if}</span>
+        {#if $curriculumStore.pendingWrites.length > 0}
+          <a class="pending-link" href="/review">{$curriculumStore.pendingWrites.length} 条写入待恢复 →</a>
+        {/if}
+      </div>
     </aside>
     <main>
       <header class="mobile-header"><button onclick={() => mobileOpen = !mobileOpen}>菜单</button><strong>{page.data?.title ?? '课程标准映射'}</strong></header>
+
+      {#if $curriculumStore.viewRev !== null}
+        <div class="view-banner">
+          正在查看 R{$curriculumStore.viewRev}{$curriculumStore.isLockedView ? ' 锁版快照' : ' 历史版本'}（只读）：{$curriculumStore.viewing?.note}
+          <button class="btn-secondary" onclick={() => curriculumStore.viewAt(null)}>回到当前工作版 R{$curriculumStore.headRev}</button>
+        </div>
+      {/if}
+
+      <div class="notice-stack">
+        {#each $curriculumStore.notices as notice (notice.id)}
+          <div class="notice-line {notice.tone}">
+            <span>{notice.text}</span>
+            <button onclick={() => curriculumStore.dismissNotice(notice.id)}>×</button>
+          </div>
+        {/each}
+      </div>
+
       {@render children()}
     </main>
   </div>
@@ -48,11 +84,23 @@
   nav a { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 7px; color: #bed0d2; text-decoration: none; font-size: 13px; }
   nav a.active { color: white; background: #365e64; box-shadow: inset 3px 0 #74bcb4; }
   nav a span { display: grid; width: 24px; height: 24px; place-items: center; border: 1px solid rgba(255,255,255,.2); border-radius: 5px; font-size: 11px; }
+  .actor-box { display: grid; gap: 8px; padding: 0 12px 12px; border-bottom: 1px solid rgba(255,255,255,.1); }
+  .actor-box label { display: grid; gap: 5px; color: #9eb2b5; font-size: 10px; }
+  .actor-box input, .actor-box select { padding: 7px 8px; font-size: 12px; }
   .side-note { margin: auto 12px 14px; padding: 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 8px; background: rgba(255,255,255,.04); }
   .side-note strong, .side-note span { display: block; font-size: 11px; }
   .side-note span { margin-top: 5px; color: #9eb2b5; }
+  .pending-link { display: inline-block; margin-top: 7px; color: #ffc9a8; font-size: 11px; }
   main { min-width: 0; margin-left: 242px; }
   .mobile-header { display: none; }
+  .view-banner { display: flex; align-items: center; gap: 12px; padding: 9px 22px; color: #7a541f; background: #fdeed3; border-bottom: 1px solid #f0d39a; font-size: 12px; }
+  .view-banner button { margin-left: auto; padding: 5px 10px; }
+  .notice-stack { position: sticky; top: 0; z-index: 30; display: grid; gap: 6px; padding: 8px 22px 0; pointer-events: none; }
+  .notice-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 13px; border-radius: 8px; font-size: 12px; box-shadow: 0 6px 18px rgba(29,56,64,.12); pointer-events: auto; }
+  .notice-line.success { color: #27634d; background: #e8f5ee; border: 1px solid #b9dfcb; }
+  .notice-line.info { color: #315e68; background: #e8f2f4; border: 1px solid #bcd7dc; }
+  .notice-line.error { color: #913c2b; background: #fdeee9; border: 1px solid #efc2b3; }
+  .notice-line button { border: 0; background: transparent; font-size: 15px; cursor: pointer; color: inherit; }
   @media (max-width: 800px) {
     aside { left: -260px; transition: left .18s ease; }
     aside.open { left: 0; }

@@ -5,6 +5,7 @@ export type GraphNode = {
   x: number
   y: number
   course?: string
+  owner?: string
 }
 
 export type Mapping = {
@@ -23,6 +24,8 @@ export type ReviewItem = {
   submitter: string
   status: '待审阅' | '已附议' | '已退回'
   comment: string
+  /** 被纳入的锁版修订号；未发布采用前为空。 */
+  lockedRev?: number
 }
 
 export const nodes: GraphNode[] = [
@@ -31,9 +34,9 @@ export const nodes: GraphNode[] = [
   { id: 'GR-01', label: '毕业要求 1\n工程知识', type: '毕业要求', x: 310, y: 50 },
   { id: 'GR-03', label: '毕业要求 3\n设计解决方案', type: '毕业要求', x: 310, y: 180 },
   { id: 'GR-06', label: '毕业要求 6\n工程与社会', type: '毕业要求', x: 310, y: 310 },
-  { id: 'C-101', label: '程序设计基础\nC-101', type: '课程', x: 570, y: 40 },
-  { id: 'C-205', label: '数据结构与算法\nC-205', type: '课程', x: 570, y: 170 },
-  { id: 'C-308', label: '软件工程实践\nC-308', type: '课程', x: 570, y: 300 },
+  { id: 'C-101', label: '程序设计基础\nC-101', type: '课程', x: 570, y: 40, owner: '林岚 / 讲师' },
+  { id: 'C-205', label: '数据结构与算法\nC-205', type: '课程', x: 570, y: 170, owner: '周衡 / 副教授' },
+  { id: 'C-308', label: '软件工程实践\nC-308', type: '课程', x: 570, y: 300, owner: '顾明 / 副教授' },
   { id: 'U-205-02', label: '图与路径算法\n单元', type: '单元', x: 830, y: 110 },
   { id: 'U-308-04', label: '需求与迭代评审\n单元', type: '单元', x: 830, y: 240 },
   { id: 'T-308-04A', label: '迭代评审演练\n教学活动', type: '教学活动', x: 1070, y: 170 },
